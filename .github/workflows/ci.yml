@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      - run: uv python install 3.12
+      - run: uv sync --dev
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - run: uv build --no-sources
+      - run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py

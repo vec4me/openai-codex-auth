@@ -1,0 +1,47 @@
+[project]
+name = "openai-codex-auth"
+version = "0.1.0"
+description = "Use the Codex CLI's ChatGPT login (~/.codex/auth.json) as a bearer credential for the Codex backend"
+readme = "README.md"
+authors = [
+    { name = "hrbatra", email = "hrbatra@utexas.edu" }
+]
+license = "MIT"
+requires-python = ">=3.12"
+keywords = ["codex", "chatgpt", "oauth", "openai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.32.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/hrbatra/openai-codex-auth"
+Repository = "https://github.com/hrbatra/openai-codex-auth"
+Issues = "https://github.com/hrbatra/openai-codex-auth/issues"
+
+[build-system]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Pin the rule set: ruff 0.16 widened its defaults, and the auth module is kept
+# byte-for-byte close to its dspy-codex-auth origin rather than restyled.
+select = ["E4", "E7", "E9", "F", "I"]
