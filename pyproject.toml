@@ -1,6 +1,6 @@
 [project]
 name = "openai-codex-auth"
-version = "0.1.0"
+version = "0.2.0"
 description = "Use the Codex CLI's ChatGPT login (~/.codex/auth.json) as a bearer credential for the Codex backend"
 readme = "README.md"
 authors = [
@@ -20,7 +20,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "httpx>=0.28.1",
     "requests>=2.32.0",
+    "websockets>=17.1",
 ]
 
 [project.urls]

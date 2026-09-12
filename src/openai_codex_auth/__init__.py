@@ -138,3 +138,30 @@ __all__ = [
     "codex_headers",
     "getauthtoken",
 ]
+
+# Authentication is defined before loading the client, which reuses these helpers.
+from .client import (  # noqa: E402
+    DEFAULT_CODEX_INSTRUCTIONS,
+    DEFAULT_CODEX_USER_AGENT,
+    CodexClient,
+    CodexTransport,
+)
+from .responses import (  # noqa: E402
+    CodexEmptyResponseError,
+    CodexError,
+    CodexHTTPError,
+    CodexProtocolError,
+    CodexResponse,
+)
+
+__all__ += [
+    "DEFAULT_CODEX_INSTRUCTIONS",
+    "DEFAULT_CODEX_USER_AGENT",
+    "CodexClient",
+    "CodexTransport",
+    "CodexResponse",
+    "CodexError",
+    "CodexHTTPError",
+    "CodexProtocolError",
+    "CodexEmptyResponseError",
+]
