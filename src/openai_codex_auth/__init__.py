@@ -144,7 +144,6 @@ from .client import (  # noqa: E402
     DEFAULT_CODEX_INSTRUCTIONS,
     DEFAULT_CODEX_USER_AGENT,
     CodexClient,
-    CodexTransport,
 )
 from .responses import (  # noqa: E402
     CodexEmptyResponseError,
@@ -158,7 +157,6 @@ __all__ += [
     "DEFAULT_CODEX_INSTRUCTIONS",
     "DEFAULT_CODEX_USER_AGENT",
     "CodexClient",
-    "CodexTransport",
     "CodexResponse",
     "CodexError",
     "CodexHTTPError",

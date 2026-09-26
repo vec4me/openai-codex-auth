@@ -10,7 +10,6 @@ from unittest.mock import patch
 import httpx
 
 import openai_codex_auth
-from openai_codex_auth import responses_websocket
 
 
 def main() -> None:
@@ -21,8 +20,6 @@ def main() -> None:
     assert openai_codex_auth.DEFAULT_CODEX_API_BASE.startswith("https://chatgpt.com/")
     assert openai_codex_auth.DEFAULT_AUTH_PATH.name == "auth.json"
     assert callable(openai_codex_auth.getauthtoken)
-    assert callable(responses_websocket.websocket_response)
-    assert callable(responses_websocket.awebsocket_response)
     assert openai_codex_auth.codex_headers(
         "synthetic-token", account_id="acct_smoke"
     )["chatgpt-account-id"] == "acct_smoke"
@@ -99,7 +96,6 @@ def main() -> None:
         "input": native_input,
         "instructions": "Be concise.",
         "reasoning": {"effort": "low"},
-        "transport": "http",
         "max_retries": 0,
     }
     with (
@@ -111,7 +107,6 @@ def main() -> None:
     assert request_count == 2
     for result in results:
         assert isinstance(result, openai_codex_auth.CodexResponse)
-        assert result.transport == "http"
         assert result.model == "gpt-test"
         assert result.output_text == "OK"
         assert result.output == response["output"]

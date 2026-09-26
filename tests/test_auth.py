@@ -116,5 +116,5 @@ def test_runtime_dependencies_are_framework_independent():
     pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
 
     dependencies = {d.split(">=")[0] for d in pyproject["project"]["dependencies"]}
-    assert dependencies == {"requests", "httpx", "websockets"}
+    assert dependencies == {"requests", "httpx"}
     assert {"dspy", "litellm"}.isdisjoint(dependencies)

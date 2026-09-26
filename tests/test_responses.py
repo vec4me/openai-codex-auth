@@ -40,7 +40,7 @@ def test_done_and_delta_are_merged_per_output_and_content_index():
         completed([]),
     ]:
         builder.add(event)
-    result = CodexResponse(builder.build(), "http")
+    result = CodexResponse(builder.build())
     assert result.output_text == "firstthirdsecond"
     assert len(result.output) == 2
     assert result.model == "gpt-test"
@@ -101,7 +101,7 @@ def test_full_final_response_and_metadata_survive_unchanged():
     response = builder.build()
     assert response == event["response"]
     assert event == original
-    assert CodexResponse(response, "websocket").output_text == "answer"
+    assert CodexResponse(response).output_text == "answer"
     assert has_output(response)
 
 
@@ -217,7 +217,7 @@ def test_refusal_and_native_tool_output_count_as_final_output():
     builder.add(completed())
     response = builder.build()
     assert has_output(response)
-    assert CodexResponse(response, "http").output_text == ""
+    assert CodexResponse(response).output_text == ""
     assert has_output({"output": [{"type": "web_search_call"}]})
     assert not has_output(
         {"output": [{"type": "reasoning", "summary": [{"text": "thinking"}]}]}

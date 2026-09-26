@@ -1,13 +1,13 @@
 # openai-codex-auth
 
 A standalone Python client for the ChatGPT Codex backend. It reads the Codex
-CLI's ChatGPT login, refreshes credentials, sends HTTP or WebSocket requests,
-and reconstructs completed Responses output from streaming events.
+CLI's ChatGPT login, refreshes credentials, sends HTTP requests, and
+reconstructs completed Responses output from streaming events.
 
 The core has no DSPy or LiteLLM dependency. Its runtime dependencies are
-Requests for credential refresh, HTTPX for HTTP, and WebSockets for WebSocket
-transport. [`dspy-codex-auth`](https://github.com/hrbatra/dspy-codex-auth) imports
-this client to provide an optional DSPy adapter.
+Requests for credential refresh and HTTPX for HTTP transport.
+[`dspy-codex-auth`](https://github.com/hrbatra/dspy-codex-auth) imports this
+client to provide an optional DSPy adapter.
 
 ## Install and login
 
@@ -42,7 +42,6 @@ Use the same client with `await client.acreate(...)` in asynchronous code:
 response = await client.acreate(
     model="gpt-5.5",
     input="What is an async iterator?",
-    transport="http",
 )
 ```
 
@@ -53,38 +52,30 @@ fields such as `reasoning`, `text`, and `tools` pass directly. The client
 returns function calls; your application executes tools and supplies results
 as input for subsequent calls. It does not provide a tool-execution loop.
 
-`CodexResponse` exposes `output_text`, `output`, `model`, `usage`, and the actual
-`transport` used. Its `response` dictionary preserves provider metadata and
-the reconstructed output, including reasoning summaries and function calls.
-Both methods consume the stream and return the completed response.
+`CodexResponse` exposes `output_text`, `output`, `model`, and `usage`. Its
+`response` dictionary preserves provider metadata and the reconstructed output,
+including reasoning summaries and function calls. Both methods consume the
+stream and return the completed response.
 
 ## Transport and request behavior
-
 ```python
 response = client.create(
     model="gpt-5.5",
     input="Hello",
-    transport="auto",
     timeout=300.0,
     connect_timeout=10.0,
-    idle_timeout=300.0,
     max_retries=3,
 )
 ```
 
-- `transport="auto"` tries HTTP and switches to WebSocket only for the exact
-  structured HTTP 404 model-not-found error for the requested model.
-  `"http"` and `"websocket"` select a single transport.
-- HTTP `timeout` defaults to 300 seconds. WebSocket connection timeout defaults
-  to 10 seconds and its per-event idle timeout to 300 seconds. HTTP also accepts
-  an `httpx.Timeout` for phase-specific deadlines, including explicit `None`
-  values to disable particular HTTP deadlines.
-- `max_retries=3` allows three additional attempts across both transports for
-  recoverable network failures, HTTP/backend 429/5xx responses, and completions
-  without meaningful output. Auto selection may additionally make an HTTP
-  routing probe before switching to WebSocket. Set `max_retries=0` to disable
-  retries. Delays start at 0.5 seconds and double up to 8 seconds. Malformed or
-  unfinished streams and other backend failures raise errors.
+- `timeout` defaults to 300 seconds and `connect_timeout` defaults to 10
+  seconds. The client also accepts an `httpx.Timeout` for phase-specific
+  deadlines, including explicit `None` values to disable particular deadlines.
+- `max_retries=3` allows three additional attempts for recoverable network
+  failures, HTTP/backend 429/5xx responses, and completions without meaningful
+  output. Set `max_retries=0` to disable retries. Delays start at 0.5 seconds and
+  double up to 8 seconds. Malformed or unfinished streams and other backend
+  failures raise errors.
 - Empty output and reasoning-only output without an answer are retried;
   refusals and other native output items are returned to the caller.
 - The backend requires `stream=True` and `store=False`; the client enforces
@@ -121,9 +112,8 @@ token = auth.token()
 headers = codex_headers(token, account_id=auth.account_id())
 ```
 
-HTTP requests use the core's originator by default; WebSocket handshakes use
-`codex_cli_rs`. Both use the configured User-Agent. Bearer credentials stay in
-authentication headers, outside WebSocket request frames.
+HTTP requests use the core's originator and configured User-Agent. Bearer
+credentials stay in authentication headers, outside request bodies.
 
 Set authentication, originator, and User-Agent through their explicit client
 options. Conflicting entries in `headers=` are ignored in favor of those

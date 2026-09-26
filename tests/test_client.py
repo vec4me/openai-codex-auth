@@ -1,4 +1,4 @@
-"""Codex client integration tests using synthetic HTTP and WebSocket backends."""
+"""Codex client integration tests using a synthetic HTTP backend."""
 
 import asyncio
 import json
@@ -19,12 +19,6 @@ from openai_codex_auth import (
     responses_http,
 )
 from openai_codex_auth import client as client_module
-from openai_codex_auth.responses_websocket import (
-    CodexWebSocketConnectionError,
-    CodexWebSocketError,
-    CodexWebSocketResponseError,
-    WebSocketResult,
-)
 
 TOKEN = "synthetic-secret-token"
 MODEL = "gpt-test"
@@ -126,10 +120,8 @@ def test_native_http_request_and_response_preserve_fields(monkeypatch, asynchron
     result = invoke(
         client,
         asynchronous,
-        transport="http",
         timeout=17.0,
         connect_timeout=4.0,
-        idle_timeout=19.0,
         max_retries=0,
         service_tier="FAST",
         max_output_tokens=9,
@@ -137,7 +129,6 @@ def test_native_http_request_and_response_preserve_fields(monkeypatch, asynchron
         tools=tools,
     )
     assert result.response == final_response()
-    assert result.transport == "http"
     assert result.output_text == "answer"
     assert result.usage["total_tokens"] == 7
     assert tools == original_tools
@@ -225,7 +216,7 @@ def test_retry_status_reads_auth_for_every_attempt(monkeypatch, asynchronous, st
         )
 
     mock_http(monkeypatch, handler)
-    result = invoke(CodexClient(auth), asynchronous, transport="http", max_retries=2)
+    result = invoke(CodexClient(auth), asynchronous, max_retries=2)
     assert result.output_text == "answer"
     assert auth.reads == 3
     assert [request.headers["authorization"] for request in seen] == [
@@ -308,132 +299,6 @@ def test_empty_response_error_omits_provider_content(monkeypatch, asynchronous):
         )
     assert len(seen) == 2
     assert "omit-me" not in str(raised.value)
-
-
-def model_not_found_body(model=MODEL):
-    return {
-        "error": {
-            "message": f"Model not found {model}",
-            "type": "invalid_request_error",
-            "param": "model",
-            "code": None,
-        }
-    }
-
-
-def mock_websocket(monkeypatch, callback):
-    monkeypatch.setattr(client_module, "websocket_response", callback)
-
-    async def async_callback(*args, **kwargs):
-        return callback(*args, **kwargs)
-
-    monkeypatch.setattr(client_module, "awebsocket_response", async_callback)
-
-
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_exact_raw_model_not_found_falls_back_to_websocket(monkeypatch, asynchronous):
-    seen = []
-    mock_http(
-        monkeypatch, lambda request: httpx.Response(404, json=model_not_found_body())
-    )
-
-    def websocket(request, **kwargs):
-        seen.append((request, kwargs))
-        return WebSocketResult(events=[], response=final_response())
-
-    mock_websocket(monkeypatch, websocket)
-    result = invoke(
-        CodexClient(api_key=TOKEN, account_id="acct1", user_agent="native-test"),
-        asynchronous,
-        transport="auto",
-        max_retries=0,
-        connect_timeout=4,
-        idle_timeout=12,
-    )
-    assert result.transport == "websocket"
-    assert len(seen) == 1
-    request, kwargs = seen[0]
-    assert request["model"] == MODEL
-    assert kwargs["user_agent"] == "native-test"
-    assert kwargs["connect_timeout"] == 4 and kwargs["idle_timeout"] == 12
-
-
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_fallback_does_not_replenish_retry_budget(monkeypatch, asynchronous):
-    seen_http = []
-    seen_ws = []
-
-    def handler(request):
-        seen_http.append(request)
-        return httpx.Response(
-            503 if len(seen_http) == 1 else 404, json=model_not_found_body()
-        )
-
-    def websocket(request, **kwargs):
-        seen_ws.append(request)
-        raise CodexWebSocketConnectionError("temporary connection error")
-
-    mock_http(monkeypatch, handler)
-    mock_websocket(monkeypatch, websocket)
-    with pytest.raises(CodexWebSocketError):
-        invoke(
-            CodexClient(api_key=TOKEN, account_id="acct1"),
-            asynchronous,
-            transport="auto",
-            max_retries=1,
-        )
-    assert len(seen_http) == 2
-    assert len(seen_ws) == 1
-
-
-@pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize(
-    "status,body",
-    [
-        (404, model_not_found_body("different-model")),
-        (404, {**model_not_found_body(), "other": 1}),
-        (
-            404,
-            {"error": {**model_not_found_body()["error"], "code": "model_not_found"}},
-        ),
-        (400, model_not_found_body()),
-        (401, model_not_found_body()),
-        (404, {"detail": f"Model not found {MODEL}"}),
-    ],
-)
-def test_fallback_rejects_nonexact_errors(monkeypatch, asynchronous, status, body):
-    seen = []
-    mock_http(
-        monkeypatch,
-        lambda request: seen.append(request) or httpx.Response(status, json=body),
-    )
-    mock_websocket(
-        monkeypatch, lambda *args, **kwargs: pytest.fail("unexpected fallback")
-    )
-    with pytest.raises(CodexHTTPError) as raised:
-        invoke(
-            CodexClient(api_key=TOKEN, account_id="acct1"), asynchronous, max_retries=3
-        )
-    assert raised.value.status_code == status
-    assert raised.value.body == body
-    assert len(seen) == 1
-
-
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_explicit_http_does_not_fall_back(monkeypatch, asynchronous):
-    mock_http(
-        monkeypatch, lambda request: httpx.Response(404, json=model_not_found_body())
-    )
-    mock_websocket(
-        monkeypatch, lambda *args, **kwargs: pytest.fail("unexpected fallback")
-    )
-    with pytest.raises(CodexHTTPError):
-        invoke(
-            CodexClient(api_key=TOKEN, account_id="acct1"),
-            asynchronous,
-            transport="http",
-            max_retries=0,
-        )
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -556,12 +421,11 @@ def test_python_only_json_shapes_never_reach_transport(
         {"timeout": float("nan")},
         {"timeout": httpx.Timeout(-1)},
         {"connect_timeout": -1},
-        {"idle_timeout": float("inf")},
+        {"transport": "http"},
+        {"idle_timeout": 300},
         {"max_retries": True},
         {"max_retries": -1},
         {"max_retries": 1.5},
-        {"transport": "other"},
-        {"transport": []},
         {"stream": False},
         {"store": True},
         {"max_tokens": 4},
@@ -601,30 +465,6 @@ def test_standalone_import_does_not_import_dspy_or_litellm():
     assert result.stdout.strip() == "standalone"
 
 
-def test_websocket_response_429_retries_and_401_does_not(monkeypatch):
-    calls = []
-
-    def websocket(request, **kwargs):
-        calls.append(request)
-        raise CodexWebSocketResponseError(
-            status_code=429 if len(calls) == 1 else 401,
-            message="backend rejected",
-            error_type=None,
-            param=None,
-            code=None,
-        )
-
-    mock_websocket(monkeypatch, websocket)
-    with pytest.raises(CodexWebSocketResponseError) as raised:
-        invoke(
-            CodexClient(api_key=TOKEN, account_id="acct1"),
-            transport="websocket",
-            max_retries=3,
-        )
-    assert len(calls) == 2
-    assert raised.value.status_code == 401
-
-
 @pytest.mark.parametrize("asynchronous", [False, True])
 def test_retry_delays_double_to_documented_cap(monkeypatch, asynchronous):
     delays = []
@@ -648,24 +488,3 @@ def test_retry_delays_double_to_documented_cap(monkeypatch, asynchronous):
         )
     assert len(seen) == 8
     assert delays == [0.5, 1, 2, 4, 8, 8, 8]
-
-
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_only_typed_websocket_network_failures_retry(monkeypatch, asynchronous):
-    seen = []
-
-    def websocket(request, **kwargs):
-        seen.append(request)
-        if len(seen) == 1:
-            raise CodexWebSocketConnectionError("temporary network failure")
-        raise CodexWebSocketError("unrecoverable client or TLS failure")
-
-    mock_websocket(monkeypatch, websocket)
-    with pytest.raises(CodexWebSocketError, match="unrecoverable"):
-        invoke(
-            CodexClient(api_key=TOKEN, account_id="acct1"),
-            asynchronous,
-            transport="websocket",
-            max_retries=3,
-        )
-    assert len(seen) == 2

@@ -8,7 +8,7 @@ import math
 import os
 import time
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -19,22 +19,13 @@ from .responses import (
     CodexError,
     CodexHTTPError,
     CodexResponse,
-    ResponseBuilder,
     contains_secret,
     has_output,
 )
 from .responses_http import ahttp_response, http_response
-from .responses_websocket import (
-    CodexWebSocketConnectionError,
-    CodexWebSocketResponseError,
-    CodexWebSocketTimeoutError,
-    awebsocket_response,
-    websocket_response,
-)
 
 DEFAULT_CODEX_INSTRUCTIONS = "You are a helpful assistant."
 DEFAULT_CODEX_USER_AGENT = "openai-codex-auth"
-type CodexTransport = Literal["auto", "http", "websocket"]
 
 _CLIENT_ONLY_PARAMETERS = frozenset(
     {
@@ -69,6 +60,8 @@ _CLIENT_ONLY_PARAMETERS = frozenset(
         "write_timeout",
         "pool_timeout",
         "stream_timeout",
+        "transport",
+        "idle_timeout",
         "codex_transport",
         "codex_websocket_connect_timeout",
         "codex_websocket_idle_timeout",
@@ -183,17 +176,6 @@ def _validate_json(value: Any) -> None:
     raise ValueError("Codex request parameters must use native JSON objects and lists")
 
 
-def _model_not_found(error: CodexHTTPError, model: str) -> bool:
-    return error.status_code == 404 and error.body == {
-        "error": {
-            "message": f"Model not found {model}",
-            "type": "invalid_request_error",
-            "param": "model",
-            "code": None,
-        }
-    }
-
-
 def _retryable(error: Exception) -> bool:
     if isinstance(
         error, (httpx.NetworkError, httpx.TimeoutException, httpx.RemoteProtocolError)
@@ -201,12 +183,6 @@ def _retryable(error: Exception) -> bool:
         return True
     if isinstance(error, CodexHTTPError):
         return error.status_code == 429 or 500 <= error.status_code <= 599
-    if isinstance(error, CodexWebSocketResponseError):
-        return error.status_code == 429 or (
-            error.status_code is not None and 500 <= error.status_code <= 599
-        )
-    if isinstance(error, (CodexWebSocketConnectionError, CodexWebSocketTimeoutError)):
-        return True
     return isinstance(error, CodexEmptyResponseError)
 
 
@@ -219,9 +195,8 @@ def _raise_final(error: Exception) -> None:
 class CodexClient:
     """Use Codex CLI auth for native Responses requests, without an ML framework.
 
-    Auth is read on each attempt. ``auto`` tries HTTP and falls back to WebSocket
-    only for the exact structured model-not-found HTTP 404. ``max_retries`` counts
-    additional attempts for network failures, HTTP/backend 429 or 5xx, and empty
+    Auth is read on each attempt. ``max_retries`` counts additional attempts for
+    network failures, HTTP/backend 429 or 5xx, and empty
     or reasoning-only completions. Delays are 0.5, 1, 2, ... seconds, capped at 8.
     Malformed or unfinished responses are not retried. Additional headers cannot
     override authentication, protocol, or the explicit ``user_agent``.
@@ -317,18 +292,10 @@ class CodexClient:
 
     @staticmethod
     def _validate_controls(
-        transport: CodexTransport,
         timeout: float | httpx.Timeout,
         connect_timeout: float,
-        idle_timeout: float,
         max_retries: int,
-    ) -> tuple[httpx.Timeout, float, float]:
-        if not isinstance(transport, str) or transport not in {
-            "auto",
-            "http",
-            "websocket",
-        }:
-            raise ValueError("transport must be one of 'auto', 'http', or 'websocket'")
+    ) -> httpx.Timeout:
         if (
             isinstance(max_retries, bool)
             or not isinstance(max_retries, int)
@@ -336,8 +303,7 @@ class CodexClient:
         ):
             raise ValueError("max_retries must be a nonnegative integer")
         connect_timeout = _positive_timeout("connect_timeout", connect_timeout)
-        idle_timeout = _positive_timeout("idle_timeout", idle_timeout)
-        return _http_timeout(timeout, connect_timeout), connect_timeout, idle_timeout
+        return _http_timeout(timeout, connect_timeout)
 
     def create(
         self,
@@ -345,69 +311,38 @@ class CodexClient:
         model: str,
         input: str | list[dict[str, Any]],
         instructions: str | None = DEFAULT_CODEX_INSTRUCTIONS,
-        transport: CodexTransport = "auto",
         timeout: float | httpx.Timeout = 300.0,
         connect_timeout: float = 10.0,
-        idle_timeout: float = 300.0,
         max_retries: int = 3,
         **parameters: Any,
     ) -> CodexResponse:
         """Return complete native output; stream=True/store=False are required.
 
         String input is encoded as one native user message. Retry delays start
-        at 0.5 seconds and double up to 8 seconds; retries share one budget across
-        HTTP and WebSocket. Auto routing can add one model-not-found HTTP probe.
-        ``service_tier='fast'`` becomes ``'priority'``. ``max_output_tokens`` is
-        omitted because this Codex backend does not support output-token caps.
-        A scalar HTTP timeout applies to each non-connect phase; an explicit
-        ``httpx.Timeout`` controls all HTTP phases. WebSocket timeouts are separate.
+        at 0.5 seconds and double up to 8 seconds. ``service_tier='fast'`` becomes
+        ``'priority'``. ``max_output_tokens`` is omitted because this Codex backend
+        does not support output-token caps. A scalar HTTP timeout applies to each
+        non-connect phase; an explicit ``httpx.Timeout`` controls all HTTP phases.
         """
-        http_timeout, connect_timeout, idle_timeout = self._validate_controls(
-            transport, timeout, connect_timeout, idle_timeout, max_retries
-        )
+        http_timeout = self._validate_controls(timeout, connect_timeout, max_retries)
         request = _request(model, input, instructions, parameters)
-        selected = "websocket" if transport == "websocket" else "http"
         attempt = 0
         while True:
             token, headers = self._credentials(request)
             try:
-                if selected == "http":
-                    response = http_response(
-                        request,
-                        url=self._url,
-                        headers=headers,
-                        timeout=http_timeout,
-                        api_key=token,
-                    )
-                else:
-                    result = websocket_response(
-                        request,
-                        api_base=self.api_base,
-                        api_key=token,
-                        headers=headers,
-                        user_agent=self.user_agent,
-                        connect_timeout=connect_timeout,
-                        idle_timeout=idle_timeout,
-                    )
-                    builder = ResponseBuilder()
-                    for event in result.events:
-                        builder.add(event)
-                    builder.complete(result.response)
-                    response = builder.build()
+                response = http_response(
+                    request,
+                    url=self._url,
+                    headers=headers,
+                    timeout=http_timeout,
+                    api_key=token,
+                )
                 if not has_output(response):
                     raise CodexEmptyResponseError(
                         f"Codex completed without final output after {attempt + 1} attempt(s)"
                     )
-                return CodexResponse(response=response, transport=selected)
+                return CodexResponse(response=response)
             except Exception as error:
-                if (
-                    isinstance(error, CodexHTTPError)
-                    and selected == "http"
-                    and transport == "auto"
-                    and _model_not_found(error, model)
-                ):
-                    selected = "websocket"
-                    continue
                 failure = error
             # Raise outside the handler so transport exceptions cannot expose
             # credential-bearing requests through exception chaining.
@@ -422,60 +357,31 @@ class CodexClient:
         model: str,
         input: str | list[dict[str, Any]],
         instructions: str | None = DEFAULT_CODEX_INSTRUCTIONS,
-        transport: CodexTransport = "auto",
         timeout: float | httpx.Timeout = 300.0,
         connect_timeout: float = 10.0,
-        idle_timeout: float = 300.0,
         max_retries: int = 3,
         **parameters: Any,
     ) -> CodexResponse:
         """Async equivalent of :meth:`create`, including its retry and timeout policy."""
-        http_timeout, connect_timeout, idle_timeout = self._validate_controls(
-            transport, timeout, connect_timeout, idle_timeout, max_retries
-        )
+        http_timeout = self._validate_controls(timeout, connect_timeout, max_retries)
         request = _request(model, input, instructions, parameters)
-        selected = "websocket" if transport == "websocket" else "http"
         attempt = 0
         while True:
             token, headers = await asyncio.to_thread(self._credentials, request)
             try:
-                if selected == "http":
-                    response = await ahttp_response(
-                        request,
-                        url=self._url,
-                        headers=headers,
-                        timeout=http_timeout,
-                        api_key=token,
-                    )
-                else:
-                    result = await awebsocket_response(
-                        request,
-                        api_base=self.api_base,
-                        api_key=token,
-                        headers=headers,
-                        user_agent=self.user_agent,
-                        connect_timeout=connect_timeout,
-                        idle_timeout=idle_timeout,
-                    )
-                    builder = ResponseBuilder()
-                    for event in result.events:
-                        builder.add(event)
-                    builder.complete(result.response)
-                    response = builder.build()
+                response = await ahttp_response(
+                    request,
+                    url=self._url,
+                    headers=headers,
+                    timeout=http_timeout,
+                    api_key=token,
+                )
                 if not has_output(response):
                     raise CodexEmptyResponseError(
                         f"Codex completed without final output after {attempt + 1} attempt(s)"
                     )
-                return CodexResponse(response=response, transport=selected)
+                return CodexResponse(response=response)
             except Exception as error:
-                if (
-                    isinstance(error, CodexHTTPError)
-                    and selected == "http"
-                    and transport == "auto"
-                    and _model_not_found(error, model)
-                ):
-                    selected = "websocket"
-                    continue
                 failure = error
             # Raise outside the handler so transport exceptions cannot expose
             # credential-bearing requests through exception chaining.

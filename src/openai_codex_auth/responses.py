@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 
 class CodexError(RuntimeError):
@@ -35,7 +35,6 @@ class CodexResponse:
     """A native provider response with reconstructed output and metadata intact."""
 
     response: dict[str, Any]
-    transport: Literal["http", "websocket"]
 
     @property
     def model(self) -> str:

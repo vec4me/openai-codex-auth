@@ -2,6 +2,7 @@
 ## Unreleased
 ### Changed
 - `CodexClient.create()` and `acreate()` omit the request `instructions` field when passed `instructions=None`.
+- Removed WebSocket transport, auto fallback, transport selection, and the WebSockets dependency. Requests now use HTTP exclusively.
 
 ## 0.2.0 - 2026-09-11
 
