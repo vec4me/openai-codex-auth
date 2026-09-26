@@ -168,6 +168,21 @@ def test_native_http_request_and_response_preserve_fields(monkeypatch, asynchron
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
+def test_none_instructions_are_omitted(monkeypatch, asynchronous):
+    seen = []
+    mock_http(monkeypatch, lambda request: seen.append(request) or sse_response())
+
+    invoke(
+        CodexClient(api_key=TOKEN, account_id="acct1"),
+        asynchronous,
+        instructions=None,
+        max_retries=0,
+    )
+
+    assert "instructions" not in json.loads(seen[0].content)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
 def test_native_list_input_and_httpx_timeout_are_preserved(monkeypatch, asynchronous):
     seen = []
     mock_http(monkeypatch, lambda request: seen.append(request) or sse_response())
@@ -536,7 +551,6 @@ def test_python_only_json_shapes_never_reach_transport(
         {"model": "gpt-test "},
         {"input": {}},
         {"input": ["hello"]},
-        {"instructions": None},
         {"timeout": False},
         {"timeout": 0},
         {"timeout": float("nan")},

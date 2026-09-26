@@ -1,4 +1,7 @@
 # Changelog
+## Unreleased
+### Changed
+- `CodexClient.create()` and `acreate()` omit the request `instructions` field when passed `instructions=None`.
 
 ## 0.2.0 - 2026-09-11
 

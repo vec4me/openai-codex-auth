@@ -48,8 +48,8 @@ response = await client.acreate(
 
 Use bare model IDs such as `gpt-5.5`. `input` accepts a string, encoded as a user
 message, or a list of native Responses input items. Pass instructions through
-`instructions=` and provider fields such as `reasoning`, `text`, and `tools`
-directly. The client
+`instructions=` or set `instructions=None` to omit the request field. Provider
+fields such as `reasoning`, `text`, and `tools` pass directly. The client
 returns function calls; your application executes tools and supplies results
 as input for subsequent calls. It does not provide a tool-execution loop.
 

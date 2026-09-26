@@ -111,7 +111,7 @@ def _http_timeout(
 def _request(
     model: str,
     input: str | list[dict[str, Any]],
-    instructions: str,
+    instructions: str | None,
     parameters: dict[str, Any],
 ) -> dict[str, Any]:
     if (
@@ -129,8 +129,8 @@ def _request(
         raise ValueError(
             "input must be a string or a list of native Responses input objects"
         )
-    if not isinstance(instructions, str):
-        raise ValueError("instructions must be a string")
+    if instructions is not None and not isinstance(instructions, str):
+        raise ValueError("instructions must be a string or None")
     invalid = _CLIENT_ONLY_PARAMETERS.intersection(parameters)
     if invalid:
         raise ValueError(
@@ -153,10 +153,11 @@ def _request(
         input=[{"role": "user", "content": [{"type": "input_text", "text": input}]}]
         if isinstance(input, str)
         else deepcopy(input),
-        instructions=instructions,
         stream=True,
         store=False,
     )
+    if instructions is not None:
+        request["instructions"] = instructions
     _validate_json(request)
     try:
         json.dumps(request, allow_nan=False)
@@ -343,7 +344,7 @@ class CodexClient:
         *,
         model: str,
         input: str | list[dict[str, Any]],
-        instructions: str = DEFAULT_CODEX_INSTRUCTIONS,
+        instructions: str | None = DEFAULT_CODEX_INSTRUCTIONS,
         transport: CodexTransport = "auto",
         timeout: float | httpx.Timeout = 300.0,
         connect_timeout: float = 10.0,
@@ -420,7 +421,7 @@ class CodexClient:
         *,
         model: str,
         input: str | list[dict[str, Any]],
-        instructions: str = DEFAULT_CODEX_INSTRUCTIONS,
+        instructions: str | None = DEFAULT_CODEX_INSTRUCTIONS,
         transport: CodexTransport = "auto",
         timeout: float | httpx.Timeout = 300.0,
         connect_timeout: float = 10.0,
